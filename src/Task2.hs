@@ -2,6 +2,9 @@
 -- The above pragma enables all warnings
 
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Task2 where
 
@@ -17,11 +20,11 @@ data Expr a op =
     Lit a
   | Var String
   | BinOp op (Expr a op) (Expr a op)
-  deriving Show
+  deriving (Show, Eq)
 
 -- | Integer binary operations
 data IntOp = Add | Mul | Sub
-  deriving Show
+  deriving (Show, Eq)
 
 -- * Parsing
 
@@ -42,7 +45,26 @@ data IntOp = Add | Mul | Sub
 -- Nothing
 --
 instance (Parse a, Parse op) => Parse (Expr a op) where
-  parse = error "TODO: define parse (Parse (Expr a op))"
+  parse s = case foldl step (Just []) (words s) of
+    Just [e] -> Just e
+    _ -> Nothing
+    where
+      step :: Maybe [Expr a op] -> String -> Maybe [Expr a op]
+      step Nothing _ = Nothing
+      step (Just stack) token =
+        case parse token :: Maybe op of
+          Just op -> case stack of
+            y:x:xs -> Just (BinOp op x y : xs)
+            _ -> Nothing
+          Nothing -> case parse token :: Maybe a of
+            Just a -> Just (Lit a : stack)
+            Nothing -> Just (Var token : stack)
+
+instance Parse IntOp where
+  parse "+" = Just Add
+  parse "*" = Just Mul
+  parse "-" = Just Sub
+  parse _ = Nothing
 
 -- * Evaluation
 
@@ -50,6 +72,11 @@ instance (Parse a, Parse op) => Parse (Expr a op) where
 class Eval a op where
   -- | Evaluates given binary operation with provided arguments
   evalBinOp :: op -> a -> a -> a
+
+instance Eval Integer IntOp where
+  evalBinOp Add x y = x + y
+  evalBinOp Mul x y = x * y
+  evalBinOp Sub x y = x - y
 
 -- | Evaluates given 'Expr' using given association list of variable values
 --
@@ -65,7 +92,12 @@ class Eval a op where
 -- Nothing
 --
 evalExpr :: (Eval a op) => [(String, a)] -> Expr a op -> Maybe a
-evalExpr = error "TODO: define evalExpr"
+evalExpr _ (Lit x) = Just x
+evalExpr m (Var x) = lookup x m
+evalExpr m (BinOp op e1 e2) =
+  case (evalExpr m e1, evalExpr m e2) of
+    (Just x, Just y) -> Just (evalBinOp op x y)
+    _ -> Nothing
 
 -- | Parses given integer expression in Reverse Polish Notation and evaluates it
 -- using given association list of variable values
@@ -89,7 +121,7 @@ evalExpr = error "TODO: define evalExpr"
 -- Nothing
 --
 evaluateInteger :: [(String, Integer)] -> String -> Maybe Integer
-evaluateInteger = error "TODO: define evaluateInteger"
+evaluateInteger = evaluate @Integer @IntOp
 
 -- | Parses given expression in Reverse Polish Notation and evaluates it
 -- using given association list of variable values
@@ -104,4 +136,3 @@ evaluate :: forall a op. (Eval a op, Parse a, Parse op) => [(String, a)] -> Stri
 evaluate m s = case parse s of
   Just e -> evalExpr m (e :: Expr a op)
   Nothing -> Nothing
-
